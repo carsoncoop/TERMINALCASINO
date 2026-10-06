@@ -179,8 +179,7 @@ class Roulette:
         self.bets = {}
         self.winning_value: Optional[tuple[str, str]] = None
 
-        # Session stats. Created before any bets are withdrawn so the
-        # starting balance is accurate.
+
         self.stats = GameStats(
             "Roulette (American)",
             accounts[0].balance,
@@ -329,7 +328,7 @@ class Roulette:
 
             if (self.accounts[i].balance == 0):
                 cprint(f"Skipping player {i + 1} because of empty balance...")
-                i += 1  # previously missing: caused an infinite loop
+                i += 1
                 continue
 
             will_bet = cinput(f"🤵: Would you like to bet, Player {i + 1} (y/N): ")
@@ -448,16 +447,16 @@ class Roulette:
 
         cprint("Paying out all winners...")
         for i, account in enumerate(self.accounts):
-            # Bets are keyed by account id, so look up by id (not by position)
+
             bet = self.bets.get(str(account.aid))
             if bet is None:
-                continue  # this player didn't bet this round
+                continue
 
             bet_type = bet["type"]
             bet_value = bet["value"]
             bet_amount = bet["amount"]
 
-            # Total multiplier on the original (already withdrawn) bet
+
             win_multiplier = 0
             if bet_type == "color" and bet_value == winning_color:
                 # Green pays 36x; red/black pay 2x
@@ -473,7 +472,7 @@ class Roulette:
             else:
                 cprint(f"Player {i + 1}: Lost {bet_amount} coins.")
 
-            # Track stats for the primary player only (matches blackjack)
+
             if account is primary:
                 self.stats.rounds_played += 1
                 if won:
@@ -514,7 +513,7 @@ def play_roulette(context: GameContext) -> None:
         clear_screen()
         display_roulette_topbar(context)
 
-        # Input to stop loop from running constantly
+
         choice = cinput("Press [Enter] to start a new round and [q] to quit: ")
 
         if choice.lower() in {"q", "quit"}:
@@ -546,7 +545,6 @@ def play_roulette(context: GameContext) -> None:
                 continue_game = True
                 break
 
-    # Post-game stats screen (shown on quit, "no" to another round, or bankruptcy)
     roulette.stats.ending_balance = context.account.balance
     display_stats(roulette.stats)
     cprint("Exiting Roulette...")
