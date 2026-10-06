@@ -9,6 +9,7 @@ import re
 from casino.types import GameContext
 from casino.utils import clear_screen, cprint, cinput, display_topbar
 from casino.accounts import Account
+from casino.stats import GameStats, display_stats
 
 ROULETTE_HEADER = """
 ┌─────────────────────────────┐
@@ -23,8 +24,10 @@ HEADER_OPTIONS = {
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+
 def _visible_len(s: str) -> int:
     return len(ANSI_RE.sub("", s))
+
 
 def cprint_ansi_center(line: str, end: str = "\n") -> None:
     """Center a string that may contain ANSI escape codes."""
@@ -33,16 +36,18 @@ def cprint_ansi_center(line: str, end: str = "\n") -> None:
     pad_left = max(0, (width - vis) // 2)
     print((" " * pad_left) + line, end=end)
 
+
 def cprint_table_center(block: str) -> None:
     lines = block.strip("\n").splitlines()
     term_width = shutil.get_terminal_size().columns
-    
+
     max_len = max(_visible_len(line) for line in lines)
     pad_left = max(0, (term_width - max_len) // 2)
-    
+
     for line in lines:
         padded_line = " " * pad_left + line
         print(padded_line)
+
 
 def display_roulette_topbar(ctx: GameContext) -> None:
     display_topbar(ctx.account, **HEADER_OPTIONS)
@@ -125,8 +130,9 @@ ROULETTE_TABLE = """
 TOTAL_ROTATIONS = 2
 SEC_BTWN_SPIN = 0.04
 
-ROWS, COLS= 17, 33
+ROWS, COLS = 17, 33
 ROULETTE_GRID = [['  ' for _ in range(COLS)] for _ in range(ROWS)]
+
 
 class Roulette:
     """
@@ -139,6 +145,8 @@ class Roulette:
             a tuple like ("0", "green").
         accounts (list[Account]): List of all player accounts.
         bets (dict[str, dict[str, str, int]]): Maps each account UUID to a bet record.
+        stats (GameStats): Session statistics for the primary player
+            (accounts[0]), shown on the post-game summary screen.
 
         Each key is a unique account UUID, and each value is a dictionary with the fields:
             {
@@ -153,7 +161,7 @@ class Roulette:
                 "uuid_2": {"type": "number", "value": "00", "amount": 50}
             }
     """
-    
+
     def __init__(self, accounts: List[Account]) -> None:
         """
         Initializes roulette
@@ -170,6 +178,15 @@ class Roulette:
         # Current round's bets
         self.bets = {}
         self.winning_value: Optional[tuple[str, str]] = None
+
+        # Session stats. Created before any bets are withdrawn so the
+        # starting balance is accurate.
+        self.stats = GameStats(
+            "Roulette (American)",
+            accounts[0].balance,
+            unit="Spins",
+            show_pushes=False,
+        )
 
     @staticmethod
     def normalize_color(input_value: str) -> str:
@@ -202,15 +219,15 @@ class Roulette:
             "color", "number"
         """
         type_map = {
-            "c" : "color",
-            "color" : "color",
-            "n" : "number",
-            "number" : "number"
+            "c": "color",
+            "color": "color",
+            "n": "number",
+            "number": "number"
         }
         return type_map.get(input_value.lower(), input_value)
 
     @staticmethod
-    def roulette_sort_key(value : str) -> int:
+    def roulette_sort_key(value: str) -> int:
         """
         Sorts values in roulette. Used as a key in the `sorted()` function.
         """
@@ -220,11 +237,11 @@ class Roulette:
             return 0
         return int(value)
 
-    def print_wheel(self, highlighted_num = None) -> None:
+    def print_wheel(self, highlighted_num=None) -> None:
         # clear current grid
         for row in range(len(ROULETTE_GRID)):
             for col in range(len(ROULETTE_GRID[0])):
-                ROULETTE_GRID[row][col] = ' ' # each empty spot is 2 spaces
+                ROULETTE_GRID[row][col] = ' '
 
         for (num_str, color, row, col) in STANDARD_AMERICAN_ROULETTE_WHEEL:
             # col += 29
@@ -232,8 +249,8 @@ class Roulette:
                 num_str = " " + num_str
             if num_str.strip() == highlighted_num.strip():
                 # the spot in the column before and column after the number become *'s
-                ROULETTE_GRID[row][col-1] = "*"
-                ROULETTE_GRID[row][col+1] = "*"
+                ROULETTE_GRID[row][col - 1] = "*"
+                ROULETTE_GRID[row][col + 1] = "*"
 
             if color == "green":
                 ROULETTE_GRID[row][col] = f"\x1b[42m\x1b[97m{num_str}\x1b[0m"
@@ -250,7 +267,7 @@ class Roulette:
         for num in sequence:
             clear_screen()
             display_roulette_topbar(ctx)
-            self.print_wheel(highlighted_num = num)
+            self.print_wheel(highlighted_num=num)
             time.sleep(sec_btwn_spins)
 
     def spin_wheel(self, ctx: GameContext) -> tuple[str, str, int, int]:
@@ -263,7 +280,7 @@ class Roulette:
                 - str: The winning color (either "red", "green", or "black")
         """
 
-        #cprint("Spinning wheel...")
+        # cprint("Spinning wheel...")
 
         random_index = random.randint(0, len(self.wheel) - 1)
         self.winning_value = self.wheel[random_index]
@@ -275,7 +292,7 @@ class Roulette:
         self.wheel_animation(ctx, sequence)
 
         winning_number = self.winning_value[0]
-        winning_color  = self.winning_value[1]
+        winning_color = self.winning_value[1]
 
         cprint(f"Winning number: {winning_number}")
         cprint(f"Winning color: {winning_color}")
@@ -303,18 +320,19 @@ class Roulette:
             player_balances = 0
             for account in self.accounts:
                 player_balances += account.balance
-            
+
             if player_balances == 0:
                 cprint("ERROR: All players have gone bankrupt. "
-                      "You cannot play any more roulette.")
+                       "You cannot play any more roulette.")
                 sleep(3)
                 return "BANKRUPT"
 
             if (self.accounts[i].balance == 0):
-                cprint(f"Skipping player {i+1} because of empty balance...")
+                cprint(f"Skipping player {i + 1} because of empty balance...")
+                i += 1  # previously missing: caused an infinite loop
                 continue
 
-            will_bet = cinput(f"🤵: Would you like to bet, Player {i+1} (y/N): ")
+            will_bet = cinput(f"🤵: Would you like to bet, Player {i + 1} (y/N): ")
 
             if will_bet == "" or will_bet.lower() in {"n", "no"}:
                 cprint("User skipped betting. Moving to next user...", end="\n\n")
@@ -329,17 +347,17 @@ class Roulette:
             clear_screen()
             display_roulette_topbar(ctx)
             # Input bet amount
-            bet_amount = cinput(f"Player {i+1}'s Bet: ")
+            bet_amount = cinput(f"Player {i + 1}'s Bet: ")
 
             # Check bet_amount is a positive integer
             try:
                 bet_amount = int(bet_amount)
 
-                if (bet_amount < 0):
+                if (bet_amount < 1):
                     raise ValueError
             except ValueError:
                 cprint(f"ERROR: '{bet_amount}' is not a valid number. "
-                      "Please enter a positive integer.", end="\n\n")
+                       "Please enter a positive integer.", end="\n\n")
                 continue
 
             # Check that account has enough money to bet
@@ -348,14 +366,14 @@ class Roulette:
             except ValueError as error:
                 if error.args and error.args[0] == "Insufficient balance":
                     print("Insufficient balance to place bet. Please enter a "
-                          f"bet less thanor equal to {self.accounts[i].balance}")
+                          f"bet less than or equal to {self.accounts[i].balance}")
                 continue
 
             clear_screen()
             display_roulette_topbar(ctx)
-            cprint(f"Successfully withdrew {bet_amount} coins from Player {i+1}.")
-            cprint(f"Player {i+1} remaining balance: "
-                  f"{self.accounts[i].balance} coins.")
+            cprint(f"Successfully withdrew {bet_amount} coins from Player {i + 1}.")
+            cprint(f"Player {i + 1} remaining balance: "
+                   f"{self.accounts[i].balance} coins.")
 
             # Ask for desired bet type
             bet_type = ""
@@ -390,7 +408,7 @@ class Roulette:
                         break
                     else:
                         cprint("Error: Chosen color is not red, green, or black.")
-            
+
             # Number betting
             elif bet_type.lower() in {"n", "number"}:
                 while True:
@@ -401,56 +419,67 @@ class Roulette:
                         break
                     else:
                         cprint("Error: You may only enter one of the following "
-                              "numbers.")
+                               "numbers.")
                         sorted_numbers = sorted(self.valid_numbers,
                                                 key=self.roulette_sort_key)
                         valid_numbers_str = ", ".join(sorted_numbers)
                         cprint("\t" + valid_numbers_str)
-         
+
             # Once values are successfully chosen, save to dictionary
             account_id = str(self.accounts[i].aid)
             self.bets[account_id] = {
-                "type"   : Roulette.normalize_type(bet_type.lower()),
-                "value"  : Roulette.normalize_color(bet_value.lower()),
-                "amount" : bet_amount
+                "type": Roulette.normalize_type(bet_type.lower()),
+                "value": Roulette.normalize_color(bet_value.lower()),
+                "amount": bet_amount
             }
             i += 1  # Move to next user
 
     def payout(self) -> None:
         """
         Pay out all players who picked the right color or number.
+
+        Also records the primary player's (accounts[0]) result in
+        `self.stats` for the post-game summary.
         """
         assert self.winning_value is not None
         winning_number = self.winning_value[0]
-        winning_color  = self.winning_value[1]
+        winning_color = self.winning_value[1]
+        primary = self.accounts[0]
 
         cprint("Paying out all winners...")
-        i = 0
-        for _, bet in self.bets.items():
-            bet_type   = bet["type"]
-            bet_value  = bet["value"]
+        for i, account in enumerate(self.accounts):
+            # Bets are keyed by account id, so look up by id (not by position)
+            bet = self.bets.get(str(account.aid))
+            if bet is None:
+                continue  # this player didn't bet this round
+
+            bet_type = bet["type"]
+            bet_value = bet["value"]
             bet_amount = bet["amount"]
 
-            win_multiplier = 1
-            # Check if user won
+            # Total multiplier on the original (already withdrawn) bet
+            win_multiplier = 0
             if bet_type == "color" and bet_value == winning_color:
-                if bet_type == "green":
-                    win_multiplier += 35
-                else:
-                    # Find account and pay back two times original bet
-                    win_multiplier += 1
+                # Green pays 36x; red/black pay 2x
+                win_multiplier = 36 if bet_value == "green" else 2
             elif bet_type == "number" and bet_value == winning_number:
-                # Find account and pay back 36 times original amount
-                win_multiplier += 35
+                win_multiplier = 36
 
-            if win_multiplier > 1:
+            won = win_multiplier > 0
+            if won:
                 win_amount = bet_amount * win_multiplier
-                self.accounts[i].deposit(win_amount)
-                cprint(f"Player {i+1}: Won {win_amount} coins.")
+                account.deposit(win_amount)
+                cprint(f"Player {i + 1}: Won {win_amount} coins.")
             else:
-                cprint(f"Player {i+1}: Lost {bet_amount} coins.")
-            
-            i += 1
+                cprint(f"Player {i + 1}: Lost {bet_amount} coins.")
+
+            # Track stats for the primary player only (matches blackjack)
+            if account is primary:
+                self.stats.rounds_played += 1
+                if won:
+                    self.stats.wins += 1
+                else:
+                    self.stats.losses += 1
 
         cprint("Finished payout.")
 
@@ -510,12 +539,15 @@ def play_roulette(context: GameContext) -> None:
                 cprint("Please enter 'Yes' or 'No'.")
                 continue
             if play_again.lower() in {"n", "no"}:
-                #cprint("Quitting roulette...")
+                # cprint("Quitting roulette...")
                 continue_game = False
                 break
             elif play_again == "" or play_again.lower() in {"y", "yes"}:
                 continue_game = True
                 break
 
-    #cprint("Exiting roulette...")
-    #sleep(0.5)
+    # Post-game stats screen (shown on quit, "no" to another round, or bankruptcy)
+    roulette.stats.ending_balance = context.account.balance
+    display_stats(roulette.stats)
+    cprint("Exiting Roulette...")
+    sleep(1.0)

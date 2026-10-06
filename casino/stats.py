@@ -12,6 +12,8 @@ class GameStats:
     wins: int = 0
     losses: int = 0
     pushes: int = 0
+    unit: str = "Hands"
+    show_pushes: bool = True   #games without ties (roulette) can hide this
 
     @property
     def net(self) -> int:
@@ -33,10 +35,13 @@ def display_stats(stats: GameStats) -> None:
 
     rows = [
         ("Game", stats.game_name),
-        ("Hands Played", str(stats.rounds_played)),
+        (f"{stats.unit} Played", str(stats.rounds_played)),
         ("Wins", str(stats.wins)),
         ("Losses", str(stats.losses)),
-        ("Pushes", str(stats.pushes)),
+    ]
+    if stats.show_pushes:
+        rows.append(("Pushes", str(stats.pushes)))
+    rows += [
         ("Win Rate", stats.win_rate),
         ("", ""),
         ("Starting Balance", str(stats.starting_balance)),
@@ -46,8 +51,8 @@ def display_stats(stats: GameStats) -> None:
 
     label_width = max(len(r[0]) for r in rows)
     value_width = max(len(r[1]) for r in rows)
-    inner_width = label_width + value_width + 6  # padding + colon + spaces
-    box_width = inner_width + 4  # borders + margin
+    inner_width = label_width + value_width + 6
+    box_width = inner_width + 4
 
     title = " Session Summary "
     side = (box_width - 2 - len(title)) // 2
